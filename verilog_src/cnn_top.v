@@ -9,18 +9,16 @@ module cnn_top(
     output wire class_out,
     output wire signed [15:0] final_score,
 
-    // AXI image write interface
     input  wire        img_we,
     input  wire [11:0] img_wr_addr,
     input  wire [7:0]  img_wr_data,
 
-    // Debug ports (required by wrapper)
     output wire [2:0] debug_state,
     output wire [3:0] active_stage
 );
 
     // ============================================================
-    // Internal Image BRAM
+    // Image BRAM
     // ============================================================
 
     reg  [11:0] img_rd_addr;
@@ -66,7 +64,7 @@ module cnn_top(
                   4'b0000;
 
     // ============================================================
-    // Address logic
+    // Image address
     // ============================================================
 
     always @(posedge clk) begin
@@ -82,7 +80,7 @@ module cnn_top(
     // Line Buffer
     // ============================================================
 
-    wire lb_valid;
+    wire lb_valid_raw;
     wire [7:0] p00,p01,p02,p10,p11,p12,p20,p21,p22;
 
     linebuffer_3x3 u_lb (
@@ -93,23 +91,61 @@ module cnn_top(
         .p00(p00), .p01(p01), .p02(p02),
         .p10(p10), .p11(p11), .p12(p12),
         .p20(p20), .p21(p21), .p22(p22),
-        .window_valid(lb_valid),
+        .window_valid(lb_valid_raw),
         .dbg_row(),
         .dbg_col()
+    );
+
+    // 🔥 FIX: sanitize lb_valid (REMOVE X)
+    reg lb_valid;
+
+    always @(posedge clk) begin
+        if (rst)
+            lb_valid <= 0;
+        else
+            lb_valid <= lb_valid_raw;
+    end
+
+    // ============================================================
+    // Weight Address Logic (SAFE NOW)
+    // ============================================================
+
+    wire signed [7:0] conv_weight;
+
+    reg [6:0] conv_weight_addr;
+    reg [6:0] conv_weight_addr_d;
+
+    always @(posedge clk) begin
+        if (rst) begin
+            conv_weight_addr   <= 0;
+            conv_weight_addr_d <= 0;
+        end else begin
+            conv_weight_addr_d <= conv_weight_addr;
+
+            if (!conv_en)
+                conv_weight_addr <= 0;
+            else if (conv_en && lb_valid) begin   // ✅ SAFE now
+                if (conv_weight_addr == 7'd8)
+                    conv_weight_addr <= 0;
+                else
+                    conv_weight_addr <= conv_weight_addr + 1;
+            end
+        end
+    end
+
+    // ============================================================
+    // ROM
+    // ============================================================
+
+    conv_weight_rom u_conv_rom (
+        .clk(clk),
+        .addr(conv_weight_addr_d),
+        .weight_out(conv_weight)
     );
 
     // ============================================================
     // Convolution
     // ============================================================
-
-    wire signed [7:0] conv_weight;
-    reg  [6:0] conv_weight_addr;
-
-    conv_weight_rom u_conv_rom (
-        .clk(clk),
-        .addr(conv_weight_addr),
-        .weight_out(conv_weight)
-    );
 
     wire signed [15:0] conv_out;
     wire conv_valid;
@@ -160,9 +196,7 @@ module cnn_top(
         .valid_in(relu_valid),
         .out_data(gap_out),
         .valid_out(gap_valid),
-        .done(gap_done),
-        .dbg_accumulator(),
-        .dbg_sample_count()
+        .done(gap_done)
     );
 
     // ============================================================
