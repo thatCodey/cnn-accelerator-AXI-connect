@@ -21,17 +21,21 @@ module tb_cnn_top;
     // ------------------------------------------------------------
     // DUT (Device Under Test)
     // ------------------------------------------------------------
-    cnn_top dut (
-        .clk(clk),
-        .rst(rst),
-        .start(start),
-        .class_out(class_out),
-        .done(done),
-        .debug_state(debug_state),
-        .active_stage(active_stage),
-        .final_score(final_score)
-    );
+   cnn_top dut (
+    .clk(clk),
+    .rst(rst),
+    .start(start),
 
+    .img_we(1'b0),
+    .img_wr_addr(12'd0),
+    .img_wr_data(8'd0),
+
+    .class_out(class_out),
+    .done(done),
+    .debug_state(debug_state),
+    .active_stage(active_stage),
+    .final_score(final_score)
+);
     // ------------------------------------------------------------
     // Clock generation: 100 MHz (10ns period)
     // ------------------------------------------------------------
@@ -53,21 +57,13 @@ module tb_cnn_top;
         #100;
         @(posedge clk);
         rst = 0; 
-        
+        #1000;
         // 3. Load image into BRAM (happens instantly in simulation)
-        $display("=================================");
-        $display("Image loading started...");
         
-        for (i = 0; i < 4096; i = i + 1) begin
-            dut.u_img.mem[i] = 8'd255; // All white pixels
-        end
-        
-        $display("Image loading complete.");
-        $display("=================================");
 
         // 4. Synchronized Start Signal (Crucial for FSM)
         // Wait 10 clock cycles to ensure everything is stable
-        repeat(10) @(posedge clk); 
+        repeat(50) @(posedge clk); 
         
         start = 1;
         @(posedge clk); // Hold start for exactly one clock cycle
