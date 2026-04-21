@@ -1,65 +1,72 @@
-// ============================================================================
-// File: conv3x3_single_ch.v
-// Description:
-//   Single-channel 3x3 convolution engine with strict sequencing.
-//   - Uses exactly 9 MAC cycles per output pixel
-//   - Bias is added ONLY after final MAC
-//   - valid_out is asserted for exactly one cycle
-//   - done is asserted for exactly one cycle
-//
-// Control:
-//   - conv_en must remain high during computation
-//   - Module is idle when conv_en = 0
-//
-// FSM Contract:
-//   - FSM asserts conv_en
-//   - Module asserts done when one convolution result is complete
-//
-// ============================================================================
 `timescale 1 ns / 1 ps
+
 module conv3x3_single_ch (
     input  wire clk,
     input  wire rst,
 
-    // Control
     input  wire conv_en,
     output reg  done,
 
-    // Data valid
     input  wire valid_in,
     output reg  valid_out,
 
-    // Pixel window
     input  wire [7:0] p00, p01, p02,
     input  wire [7:0] p10, p11, p12,
     input  wire [7:0] p20, p21, p22,
 
-    // Weight input
     input  wire signed [7:0] weight_in,
-
-    // Bias
     input  wire signed [15:0] bias,
 
-    // Output
     output reg  signed [15:0] out,
-
-    // ADD THIS LINE
     output wire [3:0] mac_step_out
 );
 
     // ------------------------------------------------------------
     // Internal signals
     // ------------------------------------------------------------
-    reg signed [23:0] acc;          // Accumulator
-    reg [3:0]         mac_step;     // 0 to 8
+    reg signed [23:0] acc;
+    reg [3:0] mac_step;
     assign mac_step_out = mac_step;
-    reg               busy;
 
-    // Selected pixel for current MAC step
+    reg busy;
+
+    // 🔥 FIX: double delay start
+    reg start_d, start_dd;
+
+    // 🔥 FIX: weight valid pipeline
+    reg signed [7:0] weight_reg;
+    reg weight_valid;
+
     reg [7:0] pixel_sel;
 
     // ------------------------------------------------------------
-    // Pixel selection logic (MAC step → pixel mapping)
+    // Start delay (2-cycle alignment)
+    // ------------------------------------------------------------
+    always @(posedge clk) begin
+        if (rst) begin
+            start_d  <= 0;
+            start_dd <= 0;
+        end else begin
+            start_d  <= (conv_en && valid_in && !busy);
+            start_dd <= start_d;
+        end
+    end
+
+    // ------------------------------------------------------------
+    // Weight register + valid flag
+    // ------------------------------------------------------------
+    always @(posedge clk) begin
+        if (rst) begin
+            weight_reg   <= 0;
+            weight_valid <= 0;
+        end else begin
+            weight_reg   <= weight_in;
+            weight_valid <= 1;   // becomes valid after first cycle
+        end
+    end
+
+    // ------------------------------------------------------------
+    // Pixel selection
     // ------------------------------------------------------------
     always @(*) begin
         case (mac_step)
@@ -77,50 +84,44 @@ module conv3x3_single_ch (
     end
 
     // ------------------------------------------------------------
-    // Main sequential logic
+    // Main logic (FIXED)
     // ------------------------------------------------------------
     always @(posedge clk) begin
         if (rst) begin
-            acc       <= 24'sd0;
-            mac_step  <= 4'd0;
-            busy      <= 1'b0;
-            out       <= 16'sd0;
-            valid_out <= 1'b0;
-            done      <= 1'b0;
+            acc       <= 0;
+            mac_step  <= 0;
+            busy      <= 0;
+            out       <= 0;
+            valid_out <= 0;
+            done      <= 0;
         end else begin
-            // Default deassertions
-            valid_out <= 1'b0;
-            done      <= 1'b0;
+            valid_out <= 0;
+            done      <= 0;
 
-            // ----------------------------------------------------
-            // Start of convolution
-            // ----------------------------------------------------
-            if (conv_en && !busy && valid_in) begin
-    busy     <= 1'b1;
-    acc      <= 24'sd0;
-    mac_step <= 4'd0;
-end
+            // 🔥 Start ONLY when weight is valid
+            if (start_dd && weight_valid) begin
+                busy     <= 1;
+                acc      <= 0;
+                mac_step <= 0;
+            end
 
-            // ----------------------------------------------------
-            // MAC operation (exactly 9 cycles)
-            // ----------------------------------------------------
+            // MAC
             if (busy) begin
-                acc <= acc + ($signed({1'b0, pixel_sel}) * weight_in);
-                // Debug: MAC trace (simulation only)
+                acc <= acc + (($signed({1'b0, pixel_sel}) * weight_reg) >>> 7);
+
                 `ifndef SYNTHESIS
                 $display("[CONV] step=%0d pixel=%0d weight=%0d acc=%0d",
-                          mac_step, pixel_sel, weight_in, acc);
+                          mac_step, pixel_sel, weight_reg, acc);
                 `endif
 
                 if (mac_step == 4'd8) begin
-    out       <= acc[15:0] + bias;
-    valid_out <= 1'b1;
-    done      <= 1'b0;   // do not signal done per pixel
-    busy      <= 1'b0;
-    mac_step  <= 4'd0;
-end
- else begin
-                    mac_step <= mac_step + 4'd1;
+                    out       <= acc[15:0] + bias;
+                    valid_out <= 1;
+                    done      <= 1;
+                    busy      <= 0;
+                    mac_step  <= 0;
+                end else begin
+                    mac_step <= mac_step + 1;
                 end
             end
         end
