@@ -1,9 +1,3 @@
-// ============================================================================
-// File: fc_layer.v
-// Description:
-//   TEMPORARY FC bypass for FPGA demo
-//   Uses single input sample and completes immediately
-// ============================================================================
 `timescale 1 ns / 1 ps
 module fc_layer (
     input  wire clk,
@@ -31,7 +25,7 @@ module fc_layer (
             done <= 0;
 
             if (fc_en && valid_in) begin
-                out <= in_data * weight + bias;
+                out <= ((in_data * weight) >>> 7) + bias;
                 valid_out <= 1'b1;
                 done <= 1'b1;
             end
