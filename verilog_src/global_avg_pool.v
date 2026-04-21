@@ -47,11 +47,13 @@ module global_avg_pool (
                 
                 // 3. Check if we have processed the whole 64x64 image
                 // 4096 in decimal is 16'h1000
-                if (dbg_sample_count == 16'h1000) begin
+                if (dbg_sample_count == 16'd3844) begin
                     // Average = Total Sum / 4096 (which is a right shift by 12)
-                    out_data <= dbg_accumulator[27:12]; 
+                    out_data <= dbg_accumulator / 16'd3844; 
                     valid_out <= 1'b1;
                     done <= 1'b1;
+                    dbg_accumulator <= 0;
+                    dbg_sample_count <= 0;
                 end
             end 
         end
