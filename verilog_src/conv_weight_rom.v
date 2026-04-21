@@ -24,31 +24,30 @@
 //     using trained weights without changing RTL.
 // ============================================================================
 `timescale 1 ns / 1 ps
+
 module conv_weight_rom (
     input  wire        clk,
-    input  wire [6:0]  addr,        // 0 to 71
+    input  wire [6:0]  addr,
     output reg  signed [7:0] weight_out
 );
 
-    // ------------------------------------------------------------
-    // ROM storage: 72 signed 8-bit weights
-    // ------------------------------------------------------------
     reg signed [7:0] weight_mem [0:71];
 
     integer i;
 
-    // ------------------------------------------------------------
-    // Initial block: temporary weights = +1
-    // ------------------------------------------------------------
     initial begin
+        $display("Loading CONV weights...");
+
+        // 🔥 FORCE initialize (no dependency on mem file)
         for (i = 0; i < 72; i = i + 1) begin
-            weight_mem[i] = 8'sd1;
+            weight_mem[i] = i;   // unique values for debug
         end
+
+        #1;
+        $display("DEBUG CONV[0] = %d", weight_mem[0]);
+        $display("DEBUG CONV[1] = %d", weight_mem[1]);
     end
 
-    // ------------------------------------------------------------
-    // Synchronous ROM read
-    // ------------------------------------------------------------
     always @(posedge clk) begin
         weight_out <= weight_mem[addr];
     end
